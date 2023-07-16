@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 
+import User from '@models/user';
 import { connectToDB } from '@utils/database'
 
 const handler = NextAuth({
@@ -10,25 +11,42 @@ const handler = NextAuth({
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
         })
     ],
-    async session({ session }) {
-        
-    },
-    async signIn({ profile }) {
-        try {
-            //serverLess -> Lambda -> dynamodb
-            // opens up only when called, spins up server and connects to it when called
-            await connectToDB();
-            //check if a user already exists
+    callbacks: {
+        async session({ session }) {
+            const sessionUser = await User.findOne({
+                email: session.user.email
+            })
 
+            session.user.id = sessionUser._id.toString();
 
-            //if not, create a new user and save to DB
+            return session;
+        },
+        async signIn({ profile }) {
+            try {
+                //serverLess -> Lambda -> dynamodb
+                // opens up only when called, spins up server and connects to it when called
+                await connectToDB();
+                //check if a user already exists
+                const userExists = await User.findOne({
+                    email: profile.email
+                });
 
-            return true;
-        } catch (error) {
-            console.log(error);
-            return false;
-        }
-    },
+                //if not, create a new user and save to DB
+                if(!userExists) {
+                    await User.create({
+                        email: profile.email,
+                        username: profile.name.replace(" ", "").toLowerCase(),
+                        image: profile.picture,
+                    })
+                }
+
+                return true;
+            } catch (error) {
+                console.log(error);
+                return false;
+            }
+        },
+    }
 
 })
 
